@@ -125,9 +125,7 @@ def multistrain_sde(
     shared_obs_C=False,
     sd_obs_C=None,
 
-    tol=None,
-    weather_func=sin
-):
+    tol=None):
     if random_seed is None:
         sys_rand = random.SystemRandom()
         random_seed = sys_rand.randint(0, 2**31 - 1)
@@ -304,50 +302,14 @@ def multistrain_sde(
         result.dt_euler_harmonic_mean = exp(sum_log_h_dt / t)
     return result
 
-def main():
-    result = multistrain_sde(dt_euler=1,
-                             adaptive=False,
-                             t_end=365*1000,
-                             dt_output=7,
-                             n_pathogens=2,
-                             S_init=[0.9, 0.96],
-                             I_init=[0.001, 0.002],
-                             weather_init=[0.5, 0.7, 0.4],
-                             mu=1 / 30 / 365,
-                             nu=0.2 * np.ones(2),
-                             gamma=np.zeros(2),
-                             beta0=np.array([0.3, 0.25]),
-                             beta_change_start=np.zeros(2),
-                             beta_slope=np.zeros(2),
-                             psi=np.ones(2) * 365,
-                             omega=np.zeros(2),
-                             eps=0.1 * np.ones(2),
-                             sigma=np.array([[1, 0], [0.2, 1]]),
-                             corr_proc=1,
-                             sd_proc=np.ones(2) * 0.05,
-                             shared_obs=False,
-                             sd_obs=np.ones(2) * 0.05,
-                             shared_obs_C=False,
-                             sd_obs_C=np.array([0.1, 0.2]) * 0.05,
-                             tol=1e-3)
-    logS = np.vstack(result['logS'])
-    weather = np.vstack(result['weather'])
-    T = result['t']
-    plt.plot(T, logS[:, 1], label='pathogen1')
-    plt.plot(T, logS[:, 0], label='pathogen0')
-    #plt.plot(T, weather[:, 1], label='weather1')
-    #plt.plot(T, weather[:, 0], label='weather0')
-    plt.legend()
-    plt.show()
 
 if __name__ == '__main__':
-    main()
-    # stdin_data = sys.stdin.read()
-    # sys.stderr.write(stdin_data)
-    # params = json.loads(stdin_data)
-    # result = globals()[sys.argv[1]](**params)
-    # sys.stderr.write('{0}'.format(result))
-    # json.dump(result, sys.stdout)
+    stdin_data = sys.stdin.read()
+    sys.stderr.write(stdin_data)
+    params = json.loads(stdin_data)
+    result = globals()[sys.argv[1]](**params)
+    sys.stderr.write('{0}'.format(result))
+    json.dump(result, sys.stdout)
 
 
 
