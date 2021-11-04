@@ -227,7 +227,10 @@ def multistrain_sde(
 
     logS = [log(S_init[i]) for i in pathogen_ids]
     logI = [log(I_init[i]) for i in pathogen_ids]
-    weather = [weather_init[i] for i in pathogen_ids]
+    if lorenz is None:
+        weather = [1,1]
+    else:
+        weather = np.random.uniform(low=0.5, high=1.5, size=3)
     CC = [0.0 for i in pathogen_ids]
     h = dt_euler
 

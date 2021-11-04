@@ -7,12 +7,12 @@ from models import multistrain_sde
 def main():
     result = multistrain_sde(dt_euler=1,
                              adaptive=False,
-                             t_end=2000 * 365,
+                             t_end=20 * 365,
                              dt_output=7,
                              n_pathogens=2,
                              S_init=[0.9, 0.96],
                              I_init=[0.001, 0.002],
-                             weather_init=[0, 0],  # 0.5, 0.7, 0.4],
+                             
                              mu=1 / 30 / 365,
                              nu=0.2 * np.ones(2),
                              gamma=np.zeros(2),
@@ -21,7 +21,7 @@ def main():
                              beta_slope=np.zeros(2),
                              psi=np.ones(2) * 365,
                              omega=np.zeros(2),
-                             eps=[0, 0.1],  # 0.1 * np.ones(2),
+                             eps=[1, 0.1],  # 0.1 * np.ones(2),
                              sigma=np.array([[1, 0], [0.2, 1]]),
                              corr_proc=1,
                              sd_proc=np.ones(2) * 0.0,
