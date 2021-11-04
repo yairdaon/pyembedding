@@ -6,7 +6,7 @@ from models import multistrain_sde
 def main():
     result = multistrain_sde(dt_euler=1,
                              adaptive=False,
-                             t_end=20,
+                             t_end=5000,
                              dt_output=7,
                              n_pathogens=2,
                              S_init=[0.9, 0.96],
