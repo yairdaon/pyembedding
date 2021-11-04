@@ -125,7 +125,9 @@ def multistrain_sde(
     shared_obs_C=False,
     sd_obs_C=None,
 
-    tol=None):
+    tol=None,
+    lorenz=None):
+
     if random_seed is None:
         sys_rand = random.SystemRandom()
         random_seed = sys_rand.randint(0, 2**31 - 1)
@@ -145,16 +147,25 @@ def multistrain_sde(
     
     n_output = int(ceil(t_end / dt_output))
     
-    def beta_t(t, pathogen_id, weather_state):
-        return (beta0[pathogen_id] + max(0.0, t - beta_change_start[pathogen_id]) * beta_slope[pathogen_id]) * (
-            1.0 + eps[pathogen_id] * weather_state[pathogen_id])
-    
-    def step(t, h, logS, logI, CC, weather_state):
+    def beta_t(t,
+               pathogen_id,
+               weather_state,
+               lorenz=None):
+        weather_state = weather_state if lorenz is None else weather_state[:, lorenz]
+        return (beta0[pathogen_id] + max(0.0, t - beta_change_start[pathogen_id]) * beta_slope[pathogen_id]) * weather_state[pathogen_id]
+
+    def step(t,
+             h,
+             logS,
+             logI,
+             CC,
+             weather_state,
+             lorenz=None):
         neg_inf = float('-inf')
         
         sqrt_h = sqrt(h)
-        
-        log_betas = [log(beta_t(t, i, weather_state=weather_state)) for i in pathogen_ids]
+
+        log_betas = [log(beta_t(t, i, weather_state=weather_state, lorenz=lorenz)) for i in pathogen_ids]
         try:
             logR = [log1p(-(exp(logS[i]) + exp(logI[i]))) for i in pathogen_ids]
         except:
@@ -199,18 +210,27 @@ def multistrain_sde(
             [logI[i] + dlogI[i] for i in pathogen_ids], \
             [CC[i] + dCC[i] for i in pathogen_ids]
 
-    def weather_step(t, h, weather_state):
-        return [sin(2.0 * pi / psi[pathogen_id] * (t - omega[pathogen_id] * psi[pathogen_id]))
+    def weather_step(t,
+                     h,
+                     weather_state,
+                     lorenz=None):
+        if lorenz is None:
+            return [1 + eps[pathogen_id] * sin(2.0 * pi / psi[pathogen_id] * (t - omega[pathogen_id] * psi[pathogen_id]))
                 for pathogen_id in pathogen_ids]
-
+        else:
+            x, y, z = weather_state
+            x_dot = 10 * (y - x)
+            y_dot = 28 * x - y - x * z
+            z_dot = x * y - 2.667 * z
+            ret = np.array([x + (x_dot * h), y + (y_dot * h), z + (z_dot * h)])
+            return np.vstack([eps[pathogen_id] * ret for pathogen_id in pathogen_ids])
 
     logS = [log(S_init[i]) for i in pathogen_ids]
     logI = [log(I_init[i]) for i in pathogen_ids]
     weather = [weather_init[i] for i in pathogen_ids]
     CC = [0.0 for i in pathogen_ids]
     h = dt_euler
-    
-    
+
     ts = [0.0]
     logSs = [logS]
     logIs = [logI]
@@ -233,15 +253,41 @@ def multistrain_sde(
             t_next = t + h
             if t_next > t_next_output:
                 t_next = t_next_output
-            weather_full = weather_step(t, t_next - t, weather)
-            logS_full, logI_full, CC_full = step(t, t_next - t, logS, logI, CC, weather_state=weather)
+            weather_full = weather_step(t,
+                                        t_next - t,
+                                        weather,
+                                        lorenz=lorenz)
+            logS_full, logI_full, CC_full = step(t,
+                                                 t_next - t,
+                                                 logS,
+                                                 logI,
+                                                 CC,
+                                                 weather_state=weather,
+                                                 lorenz=lorenz)
             if adaptive:
                 t_half = t + (t_next - t)/2.0
-                weather_half = weather_step(t, t_half - t, weather)
-                logS_half, logI_half, CC_half = step(t, t_half - t, logS, logI, CC, weather_state=weather)
-                weather_half2 = weather_step(t, t_half - t, weather_state=weather_half)
-                logS_half2, logI_half2, CC_half2 = step(t_half, t_next - t_half, logS_half, logI_half, CC_half,
-                                                        weather_state=weather_half)
+                weather_half = weather_step(t,
+                                            t_half - t,
+                                            weather,
+                                            lorenz=lorenz)
+                logS_half, logI_half, CC_half = step(t,
+                                                     t_half - t,
+                                                     logS,
+                                                     logI,
+                                                     CC,
+                                                     weather_state=weather,
+                                                     lorenz=lorenz)
+                weather_half2 = weather_step(t,
+                                             t_half - t,
+                                             weather_state=weather_half,
+                                             lorenz=lorenz)
+                logS_half2, logI_half2, CC_half2 = step(t_half,
+                                                        t_next - t_half,
+                                                        logS_half,
+                                                        logI_half,
+                                                        CC_half,
+                                                        weather_state=weather_half,
+                                                        lorenz=lorenz)
                 
                 errorS = [logS_half2[i] - logS_full[i] for i in pathogen_ids]
                 errorI = [logI_half2[i] - logI_full[i] for i in pathogen_ids]
