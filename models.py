@@ -1,4 +1,8 @@
 import os
+
+import numpy as np
+from matplotlib import pyplot as plt
+
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import sys
 import json
@@ -84,7 +88,7 @@ def sugihara_example1(
         n2series[i] = step_annual(n2series[i-1], n2series[i-1-D2], pseries[i-1-D2], Sa2, r2, 1.2 * psi)
         
         if n1series[i] < 0.0 or n2series[i] < 0.0:
-            print n1series[i], n2series[i]
+            print(n1series[i], n2series[i])
         
         assert n1series[i] > 0.0
         assert n2series[i] > 0.0
@@ -100,6 +104,7 @@ def multistrain_sde(
     n_pathogens=None,
     S_init=None,
     I_init=None,
+    weather_init=None,
     mu=None,
     nu=None,
     gamma=None,
@@ -110,17 +115,18 @@ def multistrain_sde(
     omega=None,
     eps=None,
     sigma=None,
-    
+
     corr_proc=None,
     sd_proc=None,
-    
+
     shared_obs=False,
     sd_obs=None,
-    
+
     shared_obs_C=False,
     sd_obs_C=None,
-    
-    tol=None
+
+    tol=None,
+    weather_func=sin
 ):
     if random_seed is None:
         sys_rand = random.SystemRandom()
@@ -128,7 +134,7 @@ def multistrain_sde(
     rng = random.Random()
     rng.seed(random_seed)
     
-    pathogen_ids = range(n_pathogens)
+    pathogen_ids = list(range(n_pathogens))
     
     stochastic = sum([sd_proc[i] > 0.0 for i in pathogen_ids]) > 0
     assert not (adaptive and stochastic)
@@ -141,19 +147,16 @@ def multistrain_sde(
     
     n_output = int(ceil(t_end / dt_output))
     
-    def beta_t(t, pathogen_id):
+    def beta_t(t, pathogen_id, weather_state):
         return (beta0[pathogen_id] + max(0.0, t - beta_change_start[pathogen_id]) * beta_slope[pathogen_id]) * (
-            1.0 + eps[pathogen_id] * sin(
-                2.0 * pi / psi[pathogen_id] * (t - omega[pathogen_id] * psi[pathogen_id])
-            )
-        )
+            1.0 + eps[pathogen_id] * weather_state[pathogen_id])
     
-    def step(t, h, logS, logI, CC):
+    def step(t, h, logS, logI, CC, weather_state):
         neg_inf = float('-inf')
         
         sqrt_h = sqrt(h)
         
-        log_betas = [log(beta_t(t, i)) for i in pathogen_ids]
+        log_betas = [log(beta_t(t, i, weather_state=weather_state)) for i in pathogen_ids]
         try:
             logR = [log1p(-(exp(logS[i]) + exp(logI[i]))) for i in pathogen_ids]
         except:
@@ -197,9 +200,15 @@ def multistrain_sde(
         return [logS[i] + dlogS[i] for i in pathogen_ids], \
             [logI[i] + dlogI[i] for i in pathogen_ids], \
             [CC[i] + dCC[i] for i in pathogen_ids]
-    
+
+    def weather_step(t, h, weather_state):
+        return [sin(2.0 * pi / psi[pathogen_id] * (t - omega[pathogen_id] * psi[pathogen_id]))
+                for pathogen_id in pathogen_ids]
+
+
     logS = [log(S_init[i]) for i in pathogen_ids]
     logI = [log(I_init[i]) for i in pathogen_ids]
+    weather = [weather_init[i] for i in pathogen_ids]
     CC = [0.0 for i in pathogen_ids]
     h = dt_euler
     
@@ -209,7 +218,8 @@ def multistrain_sde(
     logIs = [logI]
     CCs = [CC]
     Cs = [CC]
-    
+    weathers = [weather]
+
     if adaptive:
         sum_log_h_dt = 0.0
     for output_iter in range(n_output):
@@ -225,11 +235,15 @@ def multistrain_sde(
             t_next = t + h
             if t_next > t_next_output:
                 t_next = t_next_output
-            logS_full, logI_full, CC_full = step(t, t_next - t, logS, logI, CC)
+            weather_full = weather_step(t, t_next - t, weather)
+            logS_full, logI_full, CC_full = step(t, t_next - t, logS, logI, CC, weather_state=weather)
             if adaptive:
                 t_half = t + (t_next - t)/2.0
-                logS_half, logI_half, CC_half = step(t, t_half - t, logS, logI, CC)
-                logS_half2, logI_half2, CC_half2 = step(t_half, t_next - t_half, logS_half, logI_half, CC_half)
+                weather_half = weather_step(t, t_half - t, weather)
+                logS_half, logI_half, CC_half = step(t, t_half - t, logS, logI, CC, weather_state=weather)
+                weather_half2 = weather_step(t, t_half - t, weather_state=weather_half)
+                logS_half2, logI_half2, CC_half2 = step(t_half, t_next - t_half, logS_half, logI_half, CC_half,
+                                                        weather_state=weather_half)
                 
                 errorS = [logS_half2[i] - logS_full[i] for i in pathogen_ids]
                 errorI = [logI_half2[i] - logI_full[i] for i in pathogen_ids]
@@ -247,14 +261,17 @@ def multistrain_sde(
                     logS = [logS_full[i] + errorS[i] for i in pathogen_ids]
                     logI = [logI_full[i] + errorI[i] for i in pathogen_ids]
                     CC = [CC_full[i] + errorCC[i] for i in pathogen_ids]
+                    weather = [weather_full[i] for i in pathogen_ids]
                     t = t_next
             else:
                 logS = logS_full
                 logI = logI_full
                 CC = CC_full
+                weather = weather_full
                 t = t_next
         ts.append(t)
         logSs.append(logS)
+        weathers.append(weather)
         if not has_obs_error:
             logIs.append(logI)
         else:
@@ -280,19 +297,57 @@ def multistrain_sde(
         ('logS', logSs),
         ('logI', logIs),
         ('C', Cs),
+        ('weather', weathers),
         ('random_seed', random_seed)
     ])
     if adaptive:
         result.dt_euler_harmonic_mean = exp(sum_log_h_dt / t)
     return result
 
+def main():
+    result = multistrain_sde(dt_euler=1,
+                             adaptive=False,
+                             t_end=365*1000,
+                             dt_output=7,
+                             n_pathogens=2,
+                             S_init=[0.9, 0.96],
+                             I_init=[0.001, 0.002],
+                             weather_init=[0.5, 0.7, 0.4],
+                             mu=1 / 30 / 365,
+                             nu=0.2 * np.ones(2),
+                             gamma=np.zeros(2),
+                             beta0=np.array([0.3, 0.25]),
+                             beta_change_start=np.zeros(2),
+                             beta_slope=np.zeros(2),
+                             psi=np.ones(2) * 365,
+                             omega=np.zeros(2),
+                             eps=0.1 * np.ones(2),
+                             sigma=np.array([[1, 0], [0.2, 1]]),
+                             corr_proc=1,
+                             sd_proc=np.ones(2) * 0.05,
+                             shared_obs=False,
+                             sd_obs=np.ones(2) * 0.05,
+                             shared_obs_C=False,
+                             sd_obs_C=np.array([0.1, 0.2]) * 0.05,
+                             tol=1e-3)
+    logS = np.vstack(result['logS'])
+    weather = np.vstack(result['weather'])
+    T = result['t']
+    plt.plot(T, logS[:, 1], label='pathogen1')
+    plt.plot(T, logS[:, 0], label='pathogen0')
+    #plt.plot(T, weather[:, 1], label='weather1')
+    #plt.plot(T, weather[:, 0], label='weather0')
+    plt.legend()
+    plt.show()
+
 if __name__ == '__main__':
-    stdin_data = sys.stdin.read()
-    sys.stderr.write(stdin_data)
-    params = json.loads(stdin_data)
-    result = globals()[sys.argv[1]](**params)
-    sys.stderr.write('{0}'.format(result))
-    json.dump(result, sys.stdout)
+    main()
+    # stdin_data = sys.stdin.read()
+    # sys.stderr.write(stdin_data)
+    # params = json.loads(stdin_data)
+    # result = globals()[sys.argv[1]](**params)
+    # sys.stderr.write('{0}'.format(result))
+    # json.dump(result, sys.stdout)
 
 
 
