@@ -1,3 +1,5 @@
+import os
+import pickle
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -5,9 +7,10 @@ from models import multistrain_sde
 
 
 def main():
+    lorenz = 0
     result = multistrain_sde(dt_euler=1,
                              adaptive=False,
-                             t_end=20 * 365,
+                             t_end=2000 * 365,
                              dt_output=7,
                              n_pathogens=2,
                              S_init=[0.9, 0.96],
@@ -21,7 +24,7 @@ def main():
                              beta_slope=np.zeros(2),
                              psi=np.ones(2) * 365,
                              omega=np.zeros(2),
-                             eps=[1, 0.1],  # 0.1 * np.ones(2),
+                             eps=np.array([1, 0.1]),  # 0.1 * np.ones(2),
                              sigma=np.array([[1, 0], [0.2, 1]]),
                              corr_proc=1,
                              sd_proc=np.ones(2) * 0.0,
@@ -29,11 +32,14 @@ def main():
                              sd_obs=np.ones(2) * 0.0,
                              shared_obs_C=False,
                              sd_obs_C=np.array([0.1, 0.2]) * 0.0,
-                             tol=1e-3)
+                             tol=1e-3,
+                             lorenz=lorenz)
+
     logS = np.vstack(result['logS'])
     logI = np.vstack(result['logI'])
     weather = np.vstack(result['weather'])
-    T = result['t']
+    print(np.min(weather), np.max(weather))
+    T = np.array(result['t'])
 
     fig, axes = plt.subplots(nrows=3, sharex=True)
     ax = axes[0]
@@ -47,8 +53,7 @@ def main():
     ax.legend()
 
     ax = axes[2]
-    ax.plot(T, weather[:, 1], label='weather1')
-    ax.plot(T, weather[:, 0], label='weather0')
+    ax.plot(T, weather[:, lorenz], label='weather')
     ax.legend()
 
     plt.show()
